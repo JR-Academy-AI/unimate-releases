@@ -5,7 +5,7 @@ def windows_manifest(version, manifest, assets, upgrade):
     expected = version + '-beta.1'
     if manifest.get('version') != expected or upgrade.get('to') != expected or upgrade.get('from') != version + '-beta.0':
         raise ValueError('Wrong beta upgrade identity')
-    for field in ['seedFixture', 'tlsVerified', 'checked', 'downloaded', 'installed', 'restarted', 'profilePreserved', 'corruptDownloadRejected']:
+    for field in ['seedFixture', 'tlsVerified', 'checked', 'downloaded', 'installed', 'restarted', 'automaticRestartObserved', 'profilePreserved', 'corruptDownloadRejected']:
         if upgrade.get(field) is not True:
             raise ValueError('Missing Windows upgrade acceptance: ' + field)
     if upgrade.get('channel') != 'beta' or upgrade.get('feedNamespace') != 'windows-beta' or upgrade.get('modelCalls') != 0:
