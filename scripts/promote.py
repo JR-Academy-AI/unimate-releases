@@ -69,7 +69,7 @@ if view.returncode:
     args=['release','create',tag,'--repo',REPO,'--target',os.environ['GITHUB_SHA'],'--draft','--title','牛小匠 '+(version if channel=='mac' else version+' Windows 未签名测试版'),'--notes-file',str(notes)]
     if channel=='windows': args.append('--prerelease')
     gh(*args)
-release=json.loads(gh('api',f'repos/{REPO}/releases/tags/{tag}'))
+release=next(r for page in json.loads(gh('api',f'repos/{REPO}/releases?per_page=100','--paginate','--slurp')) for r in page if r['tag_name']==tag)
 existing={a['name']:a for a in release['assets']}
 for file in sorted(output.iterdir()):
     if file.name in existing:
