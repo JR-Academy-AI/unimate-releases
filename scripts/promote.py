@@ -1,6 +1,7 @@
 """GitHub Actions-only promotion of verified UniMate installers; no private repo token."""
 import base64, concurrent.futures, hashlib, json, os, pathlib, re, subprocess, tempfile, urllib.parse, urllib.request, zipfile
 import yaml
+from windows_manifest import windows_manifest
 REPO='JR-Academy-AI/unimate-releases'
 def require(ok, message):
     if not ok: raise RuntimeError(message)
@@ -45,7 +46,7 @@ for row,archive in concurrent.futures.ThreadPoolExecutor(max_workers=3).map(down
             require(len(data)==item['size'] and digest(data)==item['sha256'] and base64.b64encode(hashlib.sha512(data).digest()).decode()==item['sha512'], 'Installer integrity mismatch')
             require(item['name'] not in assets, 'Duplicate asset')
             (output/item['name']).write_bytes(data); assets[item['name']]=item
-        if channel=='mac': manifests.append(yaml.safe_load(z.read('latest-mac.yml')))
+        manifests.append(yaml.safe_load(z.read('latest-mac.yml' if channel=='mac' else 'beta.yml')))
         receipts.append(receipt)
 tag='v'+version if channel=='mac' else 'v'+version+'-beta.1'
 if channel=='mac':
@@ -59,11 +60,16 @@ if channel=='mac':
     require(any('arm64' in a['url'] for a in entries) and any('x64' in a['url'] for a in entries), 'Updater misses an architecture')
     updater={'version':version,'files':entries,'path':entries[0]['url'],'sha512':entries[0]['sha512']}
     (output/'latest-mac.yml').write_text(yaml.safe_dump(updater,sort_keys=False))
+if channel=='windows':
+    updater=windows_manifest(version,manifests[0],assets,receipts[0].get('windowsUpdater',{}))
+    (output/'beta.yml').write_text(yaml.safe_dump(updater,sort_keys=False))
 (output/'SHA256SUMS').write_text(''.join(f'{item["sha256"]}  {name}\n' for name,item in sorted(assets.items())))
-evidence={'sourceCommit':source,'sourceRunIds':sorted({r['runId'] for r in receipts}),'version':tag,'platforms':[{'platform':r['platform'],'arch':r['arch'],'signed':r['signed'],'notarized':r['notarized'],'installed':r['installed'],'smoke':r['smoke'],'artifacts':r['artifacts']} for r in receipts], 'authenticatedAccountAcceptance':False,'upgradeRollbackAcceptance':False}
+evidence={'sourceCommit':source,'sourceRunIds':sorted({r['runId'] for r in receipts}),'version':tag,'platforms':[{'platform':r['platform'],'arch':r['arch'],'signed':r['signed'],'notarized':r['notarized'],'installed':r['installed'],'smoke':r['smoke'],'artifacts':r['artifacts'],**({'windowsUpdater':r['windowsUpdater']} if channel=='windows' else {})} for r in receipts], 'authenticatedAccountAcceptance':False,'upgradeRollbackAcceptance':False}
 (output/'release-evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
 notes=root/'notes.md'
-notes.write_text(('Mac ARM64 与 Intel 安装包；Developer ID 签名并通过 Apple 公证。' if channel=='mac' else 'Windows x64 未签名测试版。尚无 Authenticode 证书，Windows 可能显示“未知发布者”或 SmartScreen 安全提示。请只使用本仓库的安装包并核对 SHA256；不要关闭系统安全保护。')+'\n\nCLI 接入：Claude Code、Codex 各 A$8 一次性解锁，模型订阅和用量另计。线上购买入口尚未启用。\n\nSource commit: '+source+'\nInstalled launch/reopen was checked with a synthetic profile; signed-in account, live payment/refund, upgrade/rollback acceptance remain unverified.\n')
+notes.write_text(('Mac ARM64 与 Intel 安装包；Developer ID 签名并通过 Apple 公证。' if channel=='mac' else 'Windows x64 未签名测试版。尚无 Authenticode 证书，Windows 可能显示“未知发布者”或 SmartScreen 安全提示。请只使用本仓库的安装包并核对 SHA256；不要关闭系统安全保护。')+'\n\nCLI 接入：Claude Code、Codex 各 A$8 一次性解锁，模型订阅和用量另计。线上购买入口尚未启用。\n\nSource commit: '+source+'\nInstalled launch/reopen was checked with a synthetic profile; signed-in account, live payment/refund, real-user upgrade/rollback acceptance remain unverified. Windows beta synthetic upgrade, restart, profile preservation and corrupt-download rejection are required for Windows promotion.\n')
+if channel=='windows':
+    with notes.open('a') as f: f.write('\nWindows 测试版自动更新已启用，使用独立 windows-beta 通道。0.1.2-beta.1 及更早版本需先手动安装本版一次，之后可自动检查和下载更新、确认后安装并重启。未签名系统安全提示仍可能出现。云端使用合成测试资料验证升级，并非真实账号验收。\n')
 view=subprocess.run(['gh','release','view',tag,'--repo',REPO,'--json','databaseId'],capture_output=True,text=True)
 if view.returncode == 0:
     release_id=json.loads(view.stdout)['databaseId']
@@ -85,6 +91,10 @@ if channel=='mac':
     if subprocess.run(['gh','release','view','latest','--repo',REPO],capture_output=True).returncode:
         gh('release','create','latest','--repo',REPO,'--target',os.environ['GITHUB_SHA'],'--title','牛小匠稳定更新元数据','--notes','Stable update metadata; installers use immutable versioned URLs.','--latest=false')
     gh('release','upload','latest',str(output/'latest-mac.yml'),'--repo',REPO,'--clobber')
+if channel=='windows':
+    if subprocess.run(['gh','release','view','windows-beta','--repo',REPO],capture_output=True).returncode:
+        gh('release','create','windows-beta','--repo',REPO,'--target',os.environ['GITHUB_SHA'],'--title','牛小匠 Windows 测试版更新元数据','--notes','Unsigned Windows beta update metadata; installers use immutable versioned URLs.','--prerelease','--latest=false')
+    gh('release','upload','windows-beta',str(output/'beta.yml'),'--repo',REPO,'--clobber')
 for file in sorted(output.iterdir()):
     url=f'https://github.com/{REPO}/releases/download/{tag}/'+urllib.parse.quote(file.name)
     with urllib.request.urlopen(url,timeout=180) as response: actual=digest(response.read())
@@ -92,4 +102,7 @@ for file in sorted(output.iterdir()):
 if channel=='mac':
     with urllib.request.urlopen(f'https://github.com/{REPO}/releases/download/latest/latest-mac.yml',timeout=30) as response: current=response.read()
     require(digest(current)==digest((output/'latest-mac.yml').read_bytes()), 'Stable channel readback mismatch')
+if channel=='windows':
+    with urllib.request.urlopen(f'https://github.com/{REPO}/releases/download/windows-beta/beta.yml',timeout=30) as response: current=response.read()
+    require(digest(current)==digest((output/'beta.yml').read_bytes()), 'Windows beta channel readback mismatch')
 print('PUBLISHED_AND_READ_BACK '+tag+' source='+source)
