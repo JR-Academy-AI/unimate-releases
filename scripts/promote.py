@@ -34,6 +34,7 @@ for row,archive in concurrent.futures.ThreadPoolExecutor(max_workers=3).map(down
         receipt=json.loads(z.read('receipt.json'))
         require(receipt['sourceCommit']==source and (receipt['platform'],receipt['arch'])==(row['platform'],row['arch']), 'Receipt provenance mismatch')
         require(receipt['installed'] is True and receipt['smoke']['syntheticProfilePreserved'] is True and len(receipt['smoke']['rounds'])==2 and receipt['smoke']['modelCalls']==0, 'Missing installed/reopen acceptance')
+        if channel=='windows': require(all(r.get('loginVisible') is True for r in receipt['smoke']['rounds']), 'Windows loading-screen receipt is not acceptance')
         required=[f'unimate-mac-{row["arch"]}-{version}.{ext}' for ext in ['dmg','zip']] if channel=='mac' else [f'unimate-win-x64-{version}-beta.1.exe']
         require(receipt['version']==(version if channel=='mac' else version+'-beta.1'), 'Wrong version')
         require((receipt['signed'] and receipt['notarized']) if channel=='mac' else (receipt['unsignedPreview'] and not receipt['signed']), 'Wrong signing contract')
