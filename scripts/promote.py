@@ -64,12 +64,14 @@ evidence={'sourceCommit':source,'sourceRunIds':sorted({r['runId'] for r in recei
 (output/'release-evidence.json').write_text(json.dumps(evidence,indent=2)+'\n')
 notes=root/'notes.md'
 notes.write_text(('Mac ARM64 与 Intel 安装包；Developer ID 签名并通过 Apple 公证。' if channel=='mac' else 'Windows x64 未签名测试版。尚无 Authenticode 证书，Windows 可能显示“未知发布者”或 SmartScreen 安全提示。请只使用本仓库的安装包并核对 SHA256；不要关闭系统安全保护。')+'\n\nCLI 接入：Claude Code、Codex 各 A$8 一次性解锁，模型订阅和用量另计。线上购买入口尚未启用。\n\nSource commit: '+source+'\nInstalled launch/reopen was checked with a synthetic profile; signed-in account, live payment/refund, upgrade/rollback acceptance remain unverified.\n')
-view=subprocess.run(['gh','release','view',tag,'--repo',REPO],capture_output=True)
-if view.returncode:
-    args=['release','create',tag,'--repo',REPO,'--target',os.environ['GITHUB_SHA'],'--draft','--title','牛小匠 '+(version if channel=='mac' else version+' Windows 未签名测试版'),'--notes-file',str(notes)]
-    if channel=='windows': args.append('--prerelease')
-    gh(*args)
-release=next(r for page in json.loads(gh('api',f'repos/{REPO}/releases?per_page=100','--paginate','--slurp')) for r in page if r['tag_name']==tag)
+view=subprocess.run(['gh','release','view',tag,'--repo',REPO,'--json','databaseId'],capture_output=True,text=True)
+if view.returncode == 0:
+    release_id=json.loads(view.stdout)['databaseId']
+    release=json.loads(gh('api',f'repos/{REPO}/releases/{release_id}'))
+else:
+    # Use the creation response directly: a new draft need not appear in cached tag/list reads yet.
+    payload={'tag_name':tag,'target_commitish':os.environ['GITHUB_SHA'],'draft':True,'prerelease':channel=='windows','name':'牛小匠 '+(version if channel=='mac' else version+' Windows 未签名测试版'),'body':notes.read_text()}
+    release=json.loads(subprocess.check_output(['gh','api','--method','POST',f'repos/{REPO}/releases','--input','-'],input=json.dumps(payload),text=True))
 existing={a['name']:a for a in release['assets']}
 for file in sorted(output.iterdir()):
     if file.name in existing:
