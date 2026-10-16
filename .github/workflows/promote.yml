@@ -1,0 +1,45 @@
+name: Promote verified UniMate binaries
+run-name: Publish UniMate ${{ inputs.version }} · ${{ inputs.channel }}
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        description: Stable source version
+      channel:
+        required: true
+        type: choice
+        options: [mac, windows]
+      source_commit:
+        required: true
+        description: Verified private source commit SHA
+      sources:
+        required: true
+        description: JSON array of short-lived artifact URLs and authenticated archive digests
+      confirm:
+        required: true
+        description: Type publish-unimate
+permissions:
+  contents: write
+concurrency:
+  group: unimate-public-promotion
+  cancel-in-progress: false
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - run: python -m pip install PyYAML==6.0.2
+      - name: Verify receipts, publish allowlisted binaries and read back public bytes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          SOURCE_COMMIT: ${{ inputs.source_commit }}
+          SOURCES: ${{ inputs.sources }}
+          CONFIRM: ${{ inputs.confirm }}
+        run: python scripts/promote.py
