@@ -9,3 +9,5 @@
 - 修复 GitHub 草稿尚无公开 tag 时的 Release 查询，继续使用同一草稿上传与验证，避免重复发布。
 
 - 修复新建草稿的列表同步延迟，直接使用创建返回的 Release ID，保持同版本发布幂等（binary promotion）。
+
+- 发布已签名公证的 Mac ARM64 / Intel 0.1.1 正式版及 Windows x64 0.1.1-beta.1 未签名测试版，并更新公开下载入口（binary releases）。
